@@ -1,30 +1,54 @@
 #![no_std]
 #![no_main]
 
-use cortex_m_rt::entry;
-use panic_halt as _;
-use stm32h7xx_hal::{pac, prelude::*};
+use core::mem::MaybeUninit;
 
-#[entry]
-fn main() -> ! {
-    let dp = pac::Peripherals::take().unwrap();
-    
-    // RCC and clocks
-    let pwr = dp.PWR.constrain();
-    let vos = pwr.freeze();
-    let rcc = dp.RCC.constrain();
-    let ccdr = rcc.freeze(vos, &dp.SYSCFG);
+use defmt::*;
+use embassy_executor::Spawner;
+use embassy_stm32::gpio::{Level, Output, Speed};
+use embassy_stm32::SharedData;
+use embassy_time::Timer;
+use {defmt_rtt as _, panic_probe as _};
 
-    // Get reset controller for GPIOB
-    let gpio_b = dp.GPIOB.split(ccdr.peripheral.GPIOB);
+#[unsafe(link_section = ".ram_d3.shared_data")]
+static SHARED_DATA: MaybeUninit<SharedData> = MaybeUninit::uninit();
 
-    // Configure PB0 as output
-    let mut led = gpio_b.pb0.into_push_pull_output();
+#[embassy_executor::main]
+async fn main(_spawner: Spawner) {
+    let mut config = embassy_stm32::Config::default();
+    {
+        use embassy_stm32::rcc::*;
+        config.rcc.hsi = Some(HSIPrescaler::DIV1);
+        config.rcc.csi = true;
+        config.rcc.pll1 = Some(Pll {
+            source: PllSource::HSI,
+            prediv: PllPreDiv::DIV4,
+            mul: PllMul::MUL50,
+            divp: Some(PllDiv::DIV2),
+            divq: Some(PllDiv::DIV8), // 100mhz
+            divr: None,
+        });
+        config.rcc.sys = Sysclk::PLL1_P; // 400 Mhz
+        config.rcc.ahb_pre = AHBPrescaler::DIV2; // 200 Mhz
+        config.rcc.apb1_pre = APBPrescaler::DIV2; // 100 Mhz
+        config.rcc.apb2_pre = APBPrescaler::DIV2; // 100 Mhz
+        config.rcc.apb3_pre = APBPrescaler::DIV2; // 100 Mhz
+        config.rcc.apb4_pre = APBPrescaler::DIV2; // 100 Mhz
+        config.rcc.voltage_scale = VoltageScale::Scale1;
+        config.rcc.supply_config = SupplyConfig::DirectSMPS;
+    }
+    let p = embassy_stm32::init_primary(config, &SHARED_DATA);
+    info!("Hello World!");
+
+    let mut led = Output::new(p.PB14, Level::High, Speed::Low);
 
     loop {
+        info!("high");
         led.set_high();
-        cortex_m::asm::delay(8_000_000);
+        Timer::after_millis(500).await;
+
+        info!("low");
         led.set_low();
-        cortex_m::asm::delay(8_000_000);
+        Timer::after_millis(500).await;
     }
 }
