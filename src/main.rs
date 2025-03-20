@@ -119,6 +119,8 @@ async fn net_task(mut runner: embassy_net::Runner<'static, Device>) -> ! {
 }
 
 
+
+/// Note: use something like "ncat -l -p 8000" on Windows to receive the packets
 #[embassy_executor::task]
 async fn ethernet_task(spawner: Spawner, device: Device, seed: u64) {
 
